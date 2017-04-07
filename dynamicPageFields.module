@@ -1,0 +1,144 @@
+<?php namespace ProcessWire;
+
+/**
+ * ProcessWire dynamicPageFields Module
+ *
+ * by Diogo Oliveira
+ * 
+ * ProcessWire 3.x, Copyright 2016 by Ryan Cramer
+ * https://processwire.com
+ *
+ *
+ */
+
+class dynamicPageFields extends WireData implements Module {
+
+
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Dynamic Page Fields', 
+			'version' => 002, 
+			'summary' => 'Dynamicaly create or add fields on a selected page from the template files when they don\'t exist' .
+                  ', or return their value when they do exist.',
+			'singular' => true, 
+			'autoload' => true, 
+			);
+	}
+
+	/**
+	 * Initialize the hooks
+	 *
+	 */
+	public function init() {
+
+    $this->addHook('Page::field', $this, "field");
+
+	}
+
+	/**
+	 * 
+	 * 
+	 * accepts a call in this form:
+     *
+     * $page->field('value', 'field_name', 'field_type', array('option_key' => 'option_value'), true)
+     *
+     * the string have to follow the specified order, the array and boolean can be anywhere
+     * true is for forcing the value on the field on that page,
+     * false doesn't touch the field when it exists
+     *
+     * options array override the string parameters when there i a clash e.g.
+     * with $page->field('value', 'field_name', array('name' => 'field_another_name'))
+     * field will be named "field_another_name"
+	 *
+	 * @return old or new value of the field
+	 *
+	 */
+	public function field($event) {
+
+    $p = $event->object;
+    $force_value = false;
+    $type = "text";
+    $value = "";
+    $field_name = "";
+    $options = array();
+
+    
+    $i = 0;
+    foreach($event->arguments as $arg) {
+
+        if(is_bool($arg)) {
+
+            $force_value = $arg;
+
+        } elseif(is_array($arg)) {
+
+            $options = $arg;
+
+        } else {
+
+            $i++;
+
+            switch($i) {
+                case 1:
+                    $value = $arg;
+                    break;
+                case 2:
+                    $field_name = $arg;
+                    break;
+                case 3:
+                    $type = $arg;
+                    break;
+            }
+            
+        }
+
+    }
+
+    if(isset($options['name'])) {
+        $field_name = $options['name'];
+    }
+
+    $f = wire('fields')->get(wire('sanitizer')->fieldName($field_name));
+    
+    $fg = $p->fieldgroup;
+
+    $type = wire('sanitizer')->text('Fieldtype' . str_replace('language', 'Language', ucwords(strtolower(str_replace('Fieldtype', '', $type)))));
+
+    $value = wire('sanitizer')->text($value);
+
+    if(!$f) {
+
+        $f = new Field();
+        $f->type = wire('modules')->get($type);
+        $f->name = $field_name;
+        $f->data['tags'] = "dynamicPageFields";
+        foreach($options as $k => $v) {
+            $f->$k = $v;
+        }
+        $f->save();
+
+    }
+
+    if(!$fg->hasField($f)) {
+
+        $fg->add($f);
+        $fg->save();
+
+        $p->of(false);
+        $p->$f = $value;
+        $p->save($f);
+
+    }
+
+    if($force_value) {
+
+        $p->of(false);
+        $p->$f = $value;
+        $p->save($f);
+
+    }
+
+    $p->of(true);
+		$event->return = $p->$f;
+	}
+}
